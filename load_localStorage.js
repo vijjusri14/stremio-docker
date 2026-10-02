@@ -3,6 +3,10 @@ let cachedData = {};
 let items = {};
 let server_url = null;
 
+function isUnsafeKey(key) {
+    return key === '__proto__' || key === 'constructor' || key === 'prototype';
+}
+
 async function loadJsonAndStoreInLocalStorage() {
     if (isRunning) return;
     
@@ -14,24 +18,32 @@ async function loadJsonAndStoreInLocalStorage() {
         if (!response.ok) {
             throw new Error(`Failed to load localStorage.json: ${response.status} ${response.statusText}`);
         }
-        cachedData = await response.json();
+        const parsedData = await response.json();
+        if (typeof parsedData !== 'object' || parsedData === null || Array.isArray(parsedData)) {
+            throw new Error('Invalid localStorage.json: expected a plain object');
+        }
+        cachedData = {};
+        for (const key of Object.keys(parsedData)) {
+            if (isUnsafeKey(key)) continue;
+            cachedData[key] = parsedData[key];
+        }
 
         const serverUrlExists = await fetch('server_url.env', { method: 'HEAD' });
         if (!serverUrlExists.ok) {
             const timestamp = new Date().toISOString();
             server_url = getCurrentUrl().toString();
             items[server_url] = timestamp;
-            console.log('Server URL does not exist. Setting Server URL automagically.', server_url, items);
+            console.log('[web] Server URL does not exist. Setting Server URL automagically.', server_url, items);
         } else {
             items = cachedData.streaming_server_urls.items;
             server_url = Object.keys(items)[0];
-            console.log('Server URL exists. Setting up with localStorage file.', items, server_url);
+            console.log('[web] Server URL exists. Setting up with localStorage file.', items, server_url);
         }
 
         processLocalStorageData();
 
     } catch (error) {
-        console.error('Error loading JSON data from localStorage.json:');
+        console.error('[web] Error loading JSON data from localStorage.json:');
     } finally {
         isRunning = false;
     }
@@ -61,7 +73,7 @@ function processLocalStorageData() {
     });
     
     if (reload) {
-        console.log("Changes detected for streamingServerUrl, reloading page ...");
+        console.log('[web] Changes detected for streamingServerUrl, reloading page ...');
         location.reload();
     }
 }
